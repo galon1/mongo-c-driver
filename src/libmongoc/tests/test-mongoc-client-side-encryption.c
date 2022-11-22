@@ -3543,12 +3543,22 @@ typedef struct {
 } ee_fixture;
 
 static ee_fixture *
-explicit_encryption_setup (void)
+explicit_encryption_setup (bool range)
 {
    ee_fixture *eef = (ee_fixture *) bson_malloc0 (sizeof (ee_fixture));
-   bson_t *encryptedFields = get_bson_from_json_file (
-      "./src/libmongoc/tests/client_side_encryption_prose/explicit_encryption/"
-      "encryptedFields.json");
+   bson_t *encryptedFields;
+
+   if (range) {
+      encryptedFields = get_bson_from_json_file (
+         "./src/libmongoc/tests/client_side_encryption_prose/"
+         "explicit_encryption/"
+         "encryptedFields.json");
+   } else {
+      encryptedFields = get_bson_from_json_file (
+         "./src/libmongoc/tests/client_side_encryption_prose/"
+         "explicit_encryption/"
+         "range-encryptedFields.json");
+   }
    bson_t *key1Document = get_bson_from_json_file (
       "./src/libmongoc/tests/client_side_encryption_prose/explicit_encryption/"
       "key1-document.json");
@@ -3693,6 +3703,139 @@ explicit_encryption_destroy (ee_fixture *eef)
 }
 
 static void
+test_explicit_encryption_range (void *unused)
+{
+   bson_error_t error;
+   bool ok;
+   mongoc_client_encryption_encrypt_opts_t *eopts;
+   mongoc_client_encryption_range_opts_t *rangeopts;
+   bson_value_t plaintext = {0};
+   ee_fixture *eef = explicit_encryption_setup (true);
+
+   BSON_UNUSED (unused);
+
+   plaintext.value_type = BSON_TYPE_INT32;
+   plaintext.value.v_int32 = 28;
+
+   /* Use ``encryptedClient`` to insert the document ``{ "encryptedInt":
+    * <insertPayload> }``. */
+   {
+      bson_value_t insertPayload;
+      bson_t to_insert = BSON_INITIALIZER;
+
+      eopts = mongoc_client_encryption_encrypt_opts_new ();
+      mongoc_client_encryption_encrypt_opts_set_keyid (eopts, &eef->key1ID);
+      mongoc_client_encryption_encrypt_opts_set_algorithm (
+         eopts, MONGOC_ENCRYPT_ALGORITHM_RANGE);
+
+      rangeopts = mongoc_client_encryption_range_opts_new ();
+      mongoc_client_encryption_range_opts_set_sparsity (rangeopts, 1);
+      bson_value_t min = {0};
+      min.value_type = BSON_TYPE_INT32;
+      min.value.v_int32 = 0;
+      bson_value_t max = {0};
+      max.value_type = BSON_TYPE_INT32;
+      max.value.v_int32 = 250;
+      mongoc_client_encryption_range_opts_set_min_max_precision (
+         rangeopts, min, max, 1);
+      mongoc_client_encryption_encrypt_opts_set_range_opts (eopts, rangeopts);
+
+      ok = mongoc_client_encryption_encrypt (
+         eef->clientEncryption, &plaintext, eopts, &insertPayload, &error);
+      ASSERT_OR_PRINT (ok, error);
+
+      ASSERT (BSON_APPEND_VALUE (&to_insert, "encryptedInt", &insertPayload));
+
+      ok = mongoc_collection_insert_one (eef->encryptedColl,
+                                         &to_insert,
+                                         NULL /* opts */,
+                                         NULL /* reply */,
+                                         &error);
+      ASSERT_OR_PRINT (ok, error);
+
+      bson_value_destroy (&insertPayload);
+      bson_destroy (&to_insert);
+      mongoc_client_encryption_encrypt_opts_destroy (eopts);
+   }
+   // find operation
+   {
+      bson_value_t findPayload;
+      mongoc_cursor_t *cursor;
+      bson_t filter = BSON_INITIALIZER;
+      const bson_t *got;
+
+      eopts = mongoc_client_encryption_encrypt_opts_new ();
+      mongoc_client_encryption_encrypt_opts_set_keyid (eopts, &eef->key1ID);
+      mongoc_client_encryption_encrypt_opts_set_algorithm (
+         eopts, MONGOC_ENCRYPT_ALGORITHM_RANGE);
+      mongoc_client_encryption_encrypt_opts_set_query_type (
+         eopts, MONGOC_ENCRYPT_QUERY_TYPE_RANGE);
+      rangeopts = mongoc_client_encryption_range_opts_new ();
+      mongoc_client_encryption_range_opts_set_sparsity (rangeopts, 1);
+      bson_value_t min = {0};
+      min.value_type = BSON_TYPE_INT32;
+      min.value.v_int32 = 0;
+      bson_value_t max = {0};
+      max.value_type = BSON_TYPE_INT32;
+      max.value.v_int32 = 250;
+      mongoc_client_encryption_range_opts_set_min_max_precision (
+         rangeopts, min, max, 1);
+      mongoc_client_encryption_encrypt_opts_set_range_opts (eopts, rangeopts);
+
+      bson_value_t find_doc = {0};
+      find_doc.value_type = BSON_TYPE_DOCUMENT;
+      bson_t *find = BCON_NEW ("and",
+                               "[",
+                               "{",
+                               "encryptedInt",
+                               "{",
+                               "$gt",
+                               "5",
+                               "}",
+                               "}",
+                               "{",
+                               "encryptedInt",
+                               "{",
+                               "$lt",
+                               "30",
+                               "}",
+                               "}",
+                               "]");
+      printf ("GILLOG: %s\n", json_as_bson (find, NULL));
+      find_doc.value.v_doc.data = bson_get_data (find);
+      find_doc.value.v_doc.data_len = find->len;
+      //      struct {
+      //    uint8_t *data;
+      //    uint32_t data_len;
+      // } v_doc;
+      //    {$and: [{<field>: {$gt: <value1>}}, {<field>: {$lt: <value2> }}]
+
+      ok = mongoc_client_encryption_encrypt (
+         eef->clientEncryption, &plaintext, eopts, &findPayload, &error);
+      ASSERT_OR_PRINT (ok, error);
+
+      ASSERT (BSON_APPEND_VALUE (&filter, "encryptedInt", &findPayload));
+
+      cursor = mongoc_collection_find_with_opts (
+         eef->encryptedColl, &filter, NULL /* opts */, NULL /* read_prefs
+         */);
+      ASSERT (mongoc_cursor_next (cursor, &got));
+      ASSERT_OR_PRINT (!mongoc_cursor_error (cursor, &error), error);
+      ASSERT_MATCH (got, "{ 'encryptedInt': 28 }");
+      ASSERT (!mongoc_cursor_next (cursor, &got) &&
+              "expected one document to be returned, got more than one");
+
+      bson_value_destroy (&findPayload);
+      mongoc_cursor_destroy (cursor);
+      mongoc_client_encryption_encrypt_opts_destroy (eopts);
+      bson_destroy (&filter);
+   }
+
+   explicit_encryption_destroy (eef);
+}
+
+
+static void
 test_explicit_encryption_case1 (void *unused)
 {
    /* Case 1: can insert encrypted indexed and find */
@@ -3700,7 +3843,7 @@ test_explicit_encryption_case1 (void *unused)
    bool ok;
    mongoc_client_encryption_encrypt_opts_t *eopts;
    bson_value_t plaintext = {0};
-   ee_fixture *eef = explicit_encryption_setup ();
+   ee_fixture *eef = explicit_encryption_setup (false);
 
    BSON_UNUSED (unused);
 
@@ -3788,7 +3931,7 @@ test_explicit_encryption_case2 (void *unused)
    mongoc_client_encryption_encrypt_opts_t *eopts;
    bson_value_t plaintext = {0};
    int i = 0;
-   ee_fixture *eef = explicit_encryption_setup ();
+   ee_fixture *eef = explicit_encryption_setup (false);
 
    BSON_UNUSED (unused);
 
@@ -3917,7 +4060,7 @@ test_explicit_encryption_case3 (void *unused)
    bool ok;
    mongoc_client_encryption_encrypt_opts_t *eopts;
    bson_value_t plaintext = {0};
-   ee_fixture *eef = explicit_encryption_setup ();
+   ee_fixture *eef = explicit_encryption_setup (false);
 
    BSON_UNUSED (unused);
 
@@ -3990,7 +4133,7 @@ test_explicit_encryption_case4 (void *unused)
    mongoc_client_encryption_encrypt_opts_t *eopts;
    bson_value_t plaintext = {0};
    bson_value_t payload;
-   ee_fixture *eef = explicit_encryption_setup ();
+   ee_fixture *eef = explicit_encryption_setup (false);
 
    BSON_UNUSED (unused);
 
@@ -4039,7 +4182,7 @@ test_explicit_encryption_case5 (void *unused)
    mongoc_client_encryption_encrypt_opts_t *eopts;
    bson_value_t plaintext = {0};
    bson_value_t payload;
-   ee_fixture *eef = explicit_encryption_setup ();
+   ee_fixture *eef = explicit_encryption_setup (false);
 
    BSON_UNUSED (unused);
 
@@ -6027,6 +6170,14 @@ test_client_side_encryption_install (TestSuite *suite)
                       test_create_encrypted_collection_bad_keyId,
                       NULL,
                       NULL,
+                      test_framework_skip_if_no_client_side_encryption,
+                      test_framework_skip_if_max_wire_version_less_than_17,
+                      test_framework_skip_if_single);
+   TestSuite_AddFull (suite,
+                      "/client_side_encryption/explicit_encryption/range",
+                      test_explicit_encryption_range,
+                      NULL /* dtor */,
+                      NULL /* ctx */,
                       test_framework_skip_if_no_client_side_encryption,
                       test_framework_skip_if_max_wire_version_less_than_17,
                       test_framework_skip_if_single);

@@ -3869,8 +3869,10 @@ test_explicit_encryption_range (void *unused)
          eef->clientEncryption, &find_doc, eopts, &findPayload, &error);
       ASSERT_OR_PRINT (ok, error);
 
-      bson_t *findBson = bson_new_from_data(findPayload.value.v_doc.data,(size_t) findPayload.value.v_doc.data_len);
-      ASSERT(!bson_empty(findBson));
+      bson_t *findBson =
+         bson_new_from_data (findPayload.value.v_doc.data,
+                             (size_t) findPayload.value.v_doc.data_len);
+      ASSERT (!bson_empty (findBson));
       cursor = mongoc_collection_find_with_opts (
          eef->encryptedColl, findBson, NULL /* opts */, NULL /* read_prefs
          */);
@@ -3944,7 +3946,7 @@ test_explicit_encryption_range_error (void *unused)
       bson_destroy (&to_insert);
       mongoc_client_encryption_encrypt_opts_destroy (eopts);
    }
-    explicit_encryption_destroy (eef);
+   explicit_encryption_destroy (eef);
 }
 
 

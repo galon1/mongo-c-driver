@@ -25,7 +25,7 @@
       {
         "keyId": {
             "$binary": {
-              "base64": "EjRWeBI0mHYSNBI0VniQEg==",
+              "base64": "q83vqxI0mHYSNBI0VniQEg==",
               "subType": "04"
             }
           },
@@ -34,7 +34,7 @@
         "queries": {
           "queryType": "rangePreview",
           "sparsity": {
-            "$number": "1"
+            "$numberInt": "1"
           },
           "min": {
             "$numberDouble": "10.234"
@@ -44,66 +44,6 @@
           },
           "precision": {
             "$numberInt": "3"
-          }
-        }
-      },
-      {
-        "keyId": {
-            "$binary": {
-              "base64": "EjRWeBI0mHYSNBI0VniQEg==",
-              "subType": "04"
-            }
-          },
-        "path": "encryptedDoubleNoPrecision",
-        "bsonType": "double",
-        "queries": {
-          "queryType": "rangePreview",
-          "sparsity": {
-            "$number": "1"
-          }
-        }
-      },
-      {
-        "keyId": {
-            "$binary": {
-              "base64": "EjRWeBI0mHYSNBI0VniQEg==",
-              "subType": "04"
-            }
-          },
-        "path": "encryptedLong",
-        "bsonType": "long",
-        "queries": {
-          "queryType": "rangePreview",
-          "sparsity": {
-            "$number": "1"
-          },
-          "min": {
-            "$numberLong": "1000"
-          },
-          "max": {
-            "$numberLong": "1000000"
-          }
-        }
-      },
-      {
-        "keyId": {
-            "$binary": {
-              "base64": "EjRWeBI0mHYSNBI0VniQEg==",
-              "subType": "04"
-            }
-          },
-        "path": "encryptedDate",
-        "bsonType": "date",
-        "queries": {
-          "queryType": "rangePreview",
-          "sparsity": {
-            "$number": "1"
-          },
-          "min": {
-            "$numberLong": "10"
-          },
-          "max": {
-            "$numberLong": "12345"
           }
         }
       }

@@ -35,7 +35,7 @@ struct _mongoc_database_t;
    "AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic"
 #define MONGOC_ENCRYPT_ALGORITHM_INDEXED "Indexed"
 #define MONGOC_ENCRYPT_ALGORITHM_UNINDEXED "Unindexed"
-#define MONGOC_ENCRYPT_ALGORITHM_RANGE "RangePreview"
+#define MONGOC_ENCRYPT_ALGORITHM_RANGE "Range"
 
 #define MONGOC_ENCRYPT_QUERY_TYPE_EQUALITY "equality"
 #define MONGOC_ENCRYPT_QUERY_TYPE_RANGE "range"

@@ -3552,12 +3552,12 @@ explicit_encryption_setup (bool range)
       encryptedFields = get_bson_from_json_file (
          "./src/libmongoc/tests/client_side_encryption_prose/"
          "explicit_encryption/"
-         "encryptedFields.json");
+         "range-encryptedFields.json");
    } else {
       encryptedFields = get_bson_from_json_file (
          "./src/libmongoc/tests/client_side_encryption_prose/"
          "explicit_encryption/"
-         "range-encryptedFields.json");
+         "encryptedFields.json");
    }
    bson_t *key1Document = get_bson_from_json_file (
       "./src/libmongoc/tests/client_side_encryption_prose/explicit_encryption/"
@@ -3730,6 +3730,7 @@ test_explicit_encryption_range (void *unused)
 
       rangeopts = mongoc_client_encryption_range_opts_new ();
       mongoc_client_encryption_range_opts_set_sparsity (rangeopts, 1);
+      mongoc_client_encryption_encrypt_opts_set_contention_factor (eopts, 0);
       bson_value_t min = {0};
       min.value_type = BSON_TYPE_INT32;
       min.value.v_int32 = 0;
@@ -3772,6 +3773,7 @@ test_explicit_encryption_range (void *unused)
          eopts, MONGOC_ENCRYPT_QUERY_TYPE_RANGE);
       rangeopts = mongoc_client_encryption_range_opts_new ();
       mongoc_client_encryption_range_opts_set_sparsity (rangeopts, 1);
+      mongoc_client_encryption_encrypt_opts_set_contention_factor (eopts, 0);
       bson_value_t min = {0};
       min.value_type = BSON_TYPE_INT32;
       min.value.v_int32 = 0;
@@ -3784,44 +3786,38 @@ test_explicit_encryption_range (void *unused)
 
       bson_value_t find_doc = {0};
       find_doc.value_type = BSON_TYPE_DOCUMENT;
-      bson_t *find = BCON_NEW ("and",
+      bson_t *find = BCON_NEW ("$and",
                                "[",
                                "{",
                                "encryptedInt",
                                "{",
                                "$gt",
-                               "5",
+                               BCON_INT32 (5),
                                "}",
                                "}",
                                "{",
                                "encryptedInt",
                                "{",
                                "$lt",
-                               "30",
+                               BCON_INT32 (30),
                                "}",
                                "}",
                                "]");
-      printf ("GILLOG: %s\n", json_as_bson (find, NULL));
-      find_doc.value.v_doc.data = bson_get_data (find);
+      find_doc.value.v_doc.data = (uint8_t *) bson_get_data (find);
       find_doc.value.v_doc.data_len = find->len;
-      //      struct {
-      //    uint8_t *data;
-      //    uint32_t data_len;
-      // } v_doc;
-      //    {$and: [{<field>: {$gt: <value1>}}, {<field>: {$lt: <value2> }}]
 
       ok = mongoc_client_encryption_encrypt (
-         eef->clientEncryption, &plaintext, eopts, &findPayload, &error);
+         eef->clientEncryption, &find_doc, eopts, &findPayload, &error);
       ASSERT_OR_PRINT (ok, error);
 
-      ASSERT (BSON_APPEND_VALUE (&filter, "encryptedInt", &findPayload));
-
+      bson_t *findBson = bson_new_from_data(findPayload.value.v_doc.data,(size_t) findPayload.value.v_doc.data_len);
+      ASSERT(!bson_empty(findBson));
       cursor = mongoc_collection_find_with_opts (
-         eef->encryptedColl, &filter, NULL /* opts */, NULL /* read_prefs
+         eef->encryptedColl, findBson, NULL /* opts */, NULL /* read_prefs
          */);
       ASSERT (mongoc_cursor_next (cursor, &got));
       ASSERT_OR_PRINT (!mongoc_cursor_error (cursor, &error), error);
-      ASSERT_MATCH (got, "{ 'encryptedInt': 28 }");
+      ASSERT_MATCH (got, "{ 'encryptedInt': 28}");
       ASSERT (!mongoc_cursor_next (cursor, &got) &&
               "expected one document to be returned, got more than one");
 

@@ -610,7 +610,8 @@ mongoc_client_encryption_get_bson_range_opts (
    if (range_opts->min.set) {
       BSON_APPEND_VALUE (bson_range_opts, "max", &range_opts->max);
       BSON_APPEND_VALUE (bson_range_opts, "min", &range_opts->min.value);
-      BSON_APPEND_INT32 (bson_range_opts, "precision", range_opts->precision);
+      // BSON_APPEND_INT32 (bson_range_opts, "precision",
+      // range_opts->precision);
    }
    if (range_opts->sparsity) {
       BSON_APPEND_INT64 (bson_range_opts, "sparsity", range_opts->sparsity);

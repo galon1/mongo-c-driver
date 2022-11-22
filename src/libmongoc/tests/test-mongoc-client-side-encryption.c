@@ -3703,6 +3703,29 @@ explicit_encryption_destroy (ee_fixture *eef)
 }
 
 static void
+explicit_encryption_set_range_opts_int (
+   mongoc_client_encryption_encrypt_opts_t *eopts,
+   mongoc_client_encryption_range_opts_t *rangeopts,
+   ee_fixture *eef)
+{
+   mongoc_client_encryption_encrypt_opts_set_keyid (eopts, &eef->key1ID);
+   mongoc_client_encryption_encrypt_opts_set_algorithm (
+      eopts, MONGOC_ENCRYPT_ALGORITHM_RANGE);
+
+   mongoc_client_encryption_range_opts_set_sparsity (rangeopts, 1);
+   mongoc_client_encryption_encrypt_opts_set_contention_factor (eopts, 0);
+   bson_value_t min = {0};
+   min.value_type = BSON_TYPE_INT32;
+   min.value.v_int32 = 0;
+   bson_value_t max = {0};
+   max.value_type = BSON_TYPE_INT32;
+   max.value.v_int32 = 250;
+   mongoc_client_encryption_range_opts_set_min_max_precision (
+      rangeopts, min, max, 1);
+   mongoc_client_encryption_encrypt_opts_set_range_opts (eopts, rangeopts);
+}
+
+static void
 test_explicit_encryption_range (void *unused)
 {
    bson_error_t error;
@@ -3722,25 +3745,9 @@ test_explicit_encryption_range (void *unused)
    {
       bson_value_t insertPayload;
       bson_t to_insert = BSON_INITIALIZER;
-
       eopts = mongoc_client_encryption_encrypt_opts_new ();
-      mongoc_client_encryption_encrypt_opts_set_keyid (eopts, &eef->key1ID);
-      mongoc_client_encryption_encrypt_opts_set_algorithm (
-         eopts, MONGOC_ENCRYPT_ALGORITHM_RANGE);
-
       rangeopts = mongoc_client_encryption_range_opts_new ();
-      mongoc_client_encryption_range_opts_set_sparsity (rangeopts, 1);
-      mongoc_client_encryption_encrypt_opts_set_contention_factor (eopts, 0);
-      bson_value_t min = {0};
-      min.value_type = BSON_TYPE_INT32;
-      min.value.v_int32 = 0;
-      bson_value_t max = {0};
-      max.value_type = BSON_TYPE_INT32;
-      max.value.v_int32 = 250;
-      mongoc_client_encryption_range_opts_set_min_max_precision (
-         rangeopts, min, max, 1);
-      mongoc_client_encryption_encrypt_opts_set_range_opts (eopts, rangeopts);
-
+      explicit_encryption_set_range_opts_int (eopts, rangeopts, eef);
       ok = mongoc_client_encryption_encrypt (
          eef->clientEncryption, &plaintext, eopts, &insertPayload, &error);
       ASSERT_OR_PRINT (ok, error);
@@ -3766,23 +3773,10 @@ test_explicit_encryption_range (void *unused)
       const bson_t *got;
 
       eopts = mongoc_client_encryption_encrypt_opts_new ();
-      mongoc_client_encryption_encrypt_opts_set_keyid (eopts, &eef->key1ID);
-      mongoc_client_encryption_encrypt_opts_set_algorithm (
-         eopts, MONGOC_ENCRYPT_ALGORITHM_RANGE);
+      rangeopts = mongoc_client_encryption_range_opts_new ();
       mongoc_client_encryption_encrypt_opts_set_query_type (
          eopts, MONGOC_ENCRYPT_QUERY_TYPE_RANGE);
-      rangeopts = mongoc_client_encryption_range_opts_new ();
-      mongoc_client_encryption_range_opts_set_sparsity (rangeopts, 1);
-      mongoc_client_encryption_encrypt_opts_set_contention_factor (eopts, 0);
-      bson_value_t min = {0};
-      min.value_type = BSON_TYPE_INT32;
-      min.value.v_int32 = 0;
-      bson_value_t max = {0};
-      max.value_type = BSON_TYPE_INT32;
-      max.value.v_int32 = 250;
-      mongoc_client_encryption_range_opts_set_min_max_precision (
-         rangeopts, min, max, 1);
-      mongoc_client_encryption_encrypt_opts_set_range_opts (eopts, rangeopts);
+      explicit_encryption_set_range_opts_int (eopts, rangeopts, eef);
 
       bson_value_t find_doc = {0};
       find_doc.value_type = BSON_TYPE_DOCUMENT;
@@ -3828,6 +3822,64 @@ test_explicit_encryption_range (void *unused)
    }
 
    explicit_encryption_destroy (eef);
+}
+
+static void
+test_explicit_encryption_range_error (void *unused)
+{
+   bson_error_t error;
+   bool ok;
+   mongoc_client_encryption_encrypt_opts_t *eopts;
+   mongoc_client_encryption_range_opts_t *rangeopts;
+   bson_value_t plaintext = {0};
+   ee_fixture *eef = explicit_encryption_setup (true);
+
+   BSON_UNUSED (unused);
+
+   /* Case _: Can't encrypt document that is greater than max */
+   {
+      plaintext.value_type = BSON_TYPE_INT32;
+      plaintext.value.v_int32 = 260;
+      bson_value_t insertPayload;
+      bson_t to_insert = BSON_INITIALIZER;
+      eopts = mongoc_client_encryption_encrypt_opts_new ();
+      rangeopts = mongoc_client_encryption_range_opts_new ();
+      explicit_encryption_set_range_opts_int (eopts, rangeopts, eef);
+      ok = mongoc_client_encryption_encrypt (
+         eef->clientEncryption, &plaintext, eopts, &insertPayload, &error);
+
+      ASSERT_ERROR_CONTAINS (
+         error,
+         MONGOC_ERROR_CLIENT_SIDE_ENCRYPTION,
+         MONGOC_ERROR_STREAM_INVALID_TYPE,
+         "Value must be greater than or equal to the minimum value and less "
+         "than or equal to the maximum value");
+      bson_value_destroy (&insertPayload);
+      bson_destroy (&to_insert);
+      mongoc_client_encryption_encrypt_opts_destroy (eopts);
+   }
+
+   /* Case _: Can't encrypt document that is less than min */
+   {
+      plaintext.value_type = BSON_TYPE_INT32;
+      plaintext.value.v_int32 = -1;
+      bson_value_t insertPayload;
+      bson_t to_insert = BSON_INITIALIZER;
+      eopts = mongoc_client_encryption_encrypt_opts_new ();
+      rangeopts = mongoc_client_encryption_range_opts_new ();
+      explicit_encryption_set_range_opts_int (eopts, rangeopts, eef);
+      ok = mongoc_client_encryption_encrypt (
+         eef->clientEncryption, &plaintext, eopts, &insertPayload, &error);
+
+      ASSERT_ERROR_CONTAINS (error,
+                             MONGOC_ERROR_CLIENT_SIDE_ENCRYPTION,
+                             MONGOC_ERROR_STREAM_INVALID_TYPE,
+                             "got min: 0, max: 250, value: -1");
+      bson_value_destroy (&insertPayload);
+      bson_destroy (&to_insert);
+      mongoc_client_encryption_encrypt_opts_destroy (eopts);
+   }
+    explicit_encryption_destroy (eef);
 }
 
 
@@ -6172,6 +6224,14 @@ test_client_side_encryption_install (TestSuite *suite)
    TestSuite_AddFull (suite,
                       "/client_side_encryption/explicit_encryption/range",
                       test_explicit_encryption_range,
+                      NULL /* dtor */,
+                      NULL /* ctx */,
+                      test_framework_skip_if_no_client_side_encryption,
+                      test_framework_skip_if_max_wire_version_less_than_17,
+                      test_framework_skip_if_single);
+   TestSuite_AddFull (suite,
+                      "/client_side_encryption/explicit_encryption/range_error",
+                      test_explicit_encryption_range_error,
                       NULL /* dtor */,
                       NULL /* ctx */,
                       test_framework_skip_if_no_client_side_encryption,
